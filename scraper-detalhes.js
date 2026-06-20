@@ -96,49 +96,117 @@
     return null;
   }
 
+  function estaEsgotado(el) {
+    // Verifica o próprio elemento
+    if (
+      el.classList.contains('esgotado')     ||
+      el.classList.contains('disabled')     ||
+      el.classList.contains('indisponivel') ||
+      el.classList.contains('sold-out')     ||
+      el.getAttribute('disabled') !== null  ||
+      el.style.textDecoration === 'line-through'
+    ) return true;
+
+    // Verifica filhos — o X vermelho da Bellikids é um elemento filho
+    const filho = el.querySelector(
+      '[class*="esgotado"], [class*="indisponivel"], [class*="sold-out"], ' +
+      '[class*="unavailable"], img[src*="esgotado"], img[src*="indisponivel"], ' +
+      'img[src*="nao-disponivel"], [class*="risco"], [class*="strike"]'
+    );
+    if (filho) return true;
+
+    // Verifica se há imagem de X sobreposta (padrão Bellikids: img dentro do botão)
+    const imgs = el.querySelectorAll('img');
+    for (const img of imgs) {
+      const src = (img.getAttribute('src') || '').toLowerCase();
+      if (src.includes('x.') || src.includes('esgot') || src.includes('indis') || src.includes('nao-disp')) return true;
+    }
+
+    return false;
+  }
+
   function extrairTamanhos(doc) {
     const tamanhos = [];
 
-    // Tenta seletores específicos de tamanho
     const seletores = [
-      '.tamanhos button',
-      '.tamanhos span',
-      '.tamanhos li',
-      '[class*="tamanho"] button',
-      '[class*="tamanho"] span',
-      '[class*="variacao"] button',
-      '[class*="variacao"] span',
-      '[class*="size"] button',
-      '[class*="size"] span',
-      'ul.variacoes li',
-      '.opcoes-produto button',
+      '.tamanhos button',      '.tamanhos span',       '.tamanhos li',
+      '[class*="tamanho"] button', '[class*="tamanho"] span',
+      '[class*="variacao"] button', '[class*="variacao"] span',
+      '[class*="size"] button', '[class*="size"] span',
+      'ul.variacoes li', '.opcoes-produto button',
     ];
 
     for (const sel of seletores) {
       const els = doc.querySelectorAll(sel);
-      if (els.length > 0) {
-        els.forEach(el => {
-          // Verifica se não está esgotado (procura ícone de X ou classe disabled)
-          const esgotado =
-            el.classList.contains('esgotado') ||
-            el.classList.contains('disabled') ||
-            el.classList.contains('indisponivel') ||
-            el.querySelector('[class*="esgotado"]') ||
-            el.querySelector('[class*="indisponivel"]') ||
-            el.querySelector('img[src*="esgotado"]') ||
-            el.style.textDecoration === 'line-through' ||
-            el.getAttribute('disabled') !== null;
+      if (els.length === 0) continue;
 
-          const texto = el.textContent.trim();
-          if (texto && texto.length <= 6) {
-            tamanhos.push({ tamanho: texto, disponivel: !esgotado });
-          }
-        });
-        if (tamanhos.length > 0) break;
-      }
+      els.forEach(el => {
+        const texto = el.textContent.trim().replace(/\s+/g, ' ');
+        // Tamanho válido: número ou letra curta (ex: P, M, G, GG, 04, 10, 12)
+        if (!texto || texto.length > 5) return;
+        tamanhos.push({ tamanho: texto, disponivel: !estaEsgotado(el) });
+      });
+
+      if (tamanhos.length > 0) break;
     }
 
     return tamanhos;
+  }
+
+  function extrairCores(doc) {
+    const cores = [];
+
+    const seletores = [
+      '[class*="cor"] button',   '[class*="cor"] span',   '[class*="cor"] li',
+      '[class*="color"] button', '[class*="color"] span', '[class*="color"] li',
+      '[class*="cores"] li',     '[class*="colours"] li',
+    ];
+
+    for (const sel of seletores) {
+      const els = doc.querySelectorAll(sel);
+      if (els.length === 0) continue;
+
+      els.forEach(el => {
+        // Nome da cor (title, aria-label ou texto)
+        const nome =
+          el.getAttribute('title') ||
+          el.getAttribute('aria-label') ||
+          el.querySelector('img')?.getAttribute('alt') ||
+          el.textContent.trim();
+        if (!nome || nome.length > 40) return;
+
+        // Cor CSS (background ou background-color do elemento ou filho)
+        const corCSS =
+          el.style.backgroundColor ||
+          el.style.background ||
+          getComputedStyle(el).backgroundColor ||
+          '';
+
+        // Imagem da amostra (swatch)
+        const swatchImg = el.querySelector('img');
+        const swatchSrc = swatchImg ? (swatchImg.getAttribute('src') || '') : '';
+
+        cores.push({
+          nome:        nome.trim(),
+          cor:         corCSS || null,
+          swatch:      swatchSrc || null,
+          disponivel:  !estaEsgotado(el),
+        });
+      });
+
+      if (cores.length > 0) break;
+    }
+
+    // Fallback: tenta pegar o label "Cor: Lavender" do texto da página
+    if (cores.length === 0) {
+      const textos = doc.querySelectorAll('[class*="variacao"] label, [class*="opcao"] label');
+      textos.forEach(el => {
+        const t = el.textContent.trim();
+        if (t.length > 0 && t.length < 40) cores.push({ nome: t, cor: null, swatch: null, disponivel: true });
+      });
+    }
+
+    return cores;
   }
 
   // ─── Helpers de log ───────────────────────────────────────────────────────
@@ -180,9 +248,11 @@
     let imagens  = [];
     let tamanhos = [];
 
+    let cores = [];
     if (doc) {
       imagens  = extrairImagens(doc);
       tamanhos = extrairTamanhos(doc);
+      cores    = extrairCores(doc);
       if (imagens.length === 0) erros++;
     } else {
       erros++;
@@ -195,12 +265,13 @@
 
     resultados.push({
       nome:      p.nome,
-      imagens,                   // array de todas as fotos
-      imagem:    imagens[0] || p.imagem,  // compatibilidade com versão anterior
+      imagens,                          // todas as fotos
+      imagem:    imagens[0] || p.imagem, // compatibilidade com produtos.json
       url:       p.url,
       categoria: p.categoria,
       genero:    p.genero,
-      tamanhos,                  // [{ tamanho: "4", disponivel: true }, ...]
+      tamanhos,  // [{ tamanho: "4", disponivel: true }, ...]
+      cores,     // [{ nome: "Lavender", cor: "rgb(...)", swatch: "...", disponivel: true }]
     });
 
     // Log de progresso
@@ -210,7 +281,7 @@
     const pct       = ((num / produtos.length) * 100).toFixed(1);
 
     if (num % 10 === 0 || num === 1) {
-      console.log(`[${num}/${produtos.length}] ${pct}% | ⏱ restante: ~${formatarTempo(restantes)} | ❌ sem foto: ${erros} | 📸 última: ${imagens.length} fotos, 📏 ${tamanhos.length} tamanhos — ${p.nome.slice(0,40)}`);
+      console.log(`[${num}/${produtos.length}] ${pct}% | ⏱ ~${formatarTempo(restantes)} | ❌${erros} | 📸${imagens.length} fotos 📏${tamanhos.length} tam 🎨${cores.length} cores — ${p.nome.slice(0,38)}`);
     }
 
     // Checkpoint a cada N produtos

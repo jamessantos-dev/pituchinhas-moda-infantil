@@ -143,6 +143,24 @@
       text-decoration: line-through;
     }
 
+    /* CORES NO CARD */
+    .cores-lista { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+    .cor-swatch {
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 2px solid rgba(0,0,0,0.12);
+      flex-shrink: 0; cursor: default;
+      position: relative;
+    }
+    .cor-swatch.esgotado { opacity: 0.35; }
+    .cor-swatch img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+    .cor-swatch[title]:hover::after {
+      content: attr(title);
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.75); color: #fff;
+      font-size: 0.65rem; white-space: nowrap;
+      padding: 3px 7px; border-radius: 4px; pointer-events: none;
+    }
+
     .btn-interesse {
       display: flex; align-items: center; justify-content: center; gap: 8px;
       background: #25D366; color: var(--branco);
@@ -453,6 +471,18 @@
            </div>`
         : '';
 
+      const coresHTML = p.cores && p.cores.length
+        ? `<div class="cores-lista">
+             ${p.cores.map(c => {
+               const style = c.swatch
+                 ? ''
+                 : (c.cor ? `style="background:${c.cor}"` : 'style="background:#ccc"');
+               const inner = c.swatch ? `<img src="${c.swatch}" alt="${c.nome}" />` : '';
+               return `<span class="cor-swatch ${c.disponivel ? '' : 'esgotado'}" title="${c.nome}" ${style}>${inner}</span>`;
+             }).join('')}
+           </div>`
+        : '';
+
       const badgeFotos = fotos.length > 1
         ? `<span class="badge-fotos">📸 ${fotos.length}</span>`
         : '';
@@ -468,6 +498,7 @@
           </div>
           <div class="vestido-info">
             <h3 class="vestido-nome">${p.nome}</h3>
+            ${coresHTML}
             ${tamanhoHTML}
             <a class="btn-interesse" href="https://wa.me/${WPP}?text=${msg}" target="_blank" rel="noopener">
               ${wppIcon} Tenho interesse!
